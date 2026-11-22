@@ -531,6 +531,9 @@ class MainApp:
         #capture-panel { background: #222; }
         .capture-tile { background: #333; border: 0; border-radius: 5px; color: #aaa; box-shadow: none; }
         .capture-tile:hover { background: #444; }
+        .capture-tile:focus, .round-button:focus, .mode-button:focus {
+            outline: none; box-shadow: none; border-color: transparent;
+        }
         .round-button { background: #333; border: 0; border-radius: 26px; box-shadow: none; }
         .round-button:checked { background: #555; }
         .round-button:hover { background: #444; }
@@ -548,8 +551,8 @@ class MainApp:
         self.launcher = Gtk.Window(title='GNOME Recorder')
         self.launcher.set_decorated(False)
         self.launcher.set_resizable(False)
-        self.launcher.set_default_size(640, 300)
-        self.launcher.set_size_request(640, 300)
+        self.launcher.set_default_size(640, 250)
+        self.launcher.set_size_request(640, 250)
         self.launcher.set_keep_above(True)
         self.launcher.connect('delete-event', self._launcher_close)
         self.launcher.connect('realize', self._position_launcher)
@@ -561,7 +564,7 @@ class MainApp:
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content.set_margin_start(41)
         content.set_margin_end(41)
-        content.set_margin_top(75)
+        content.set_margin_top(25)
         content.set_margin_bottom(25)
         overlay.add(content)
         tiles = Gtk.Box(spacing=42)
@@ -926,7 +929,7 @@ class MainApp:
 
     def _error(self, msg):
         self._status('Ошибка: ' + msg)
-        dialog = Gtk.MessageDialog(transient_for=self.window, flags=0,
+        dialog = Gtk.MessageDialog(transient_for=self.launcher, flags=0,
             message_type=Gtk.MessageType.ERROR, buttons=Gtk.ButtonsType.OK,
             text='Ошибка записи')
         dialog.format_secondary_text(str(msg))

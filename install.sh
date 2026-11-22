@@ -13,6 +13,9 @@ sudo apt install -y python3-gi python3-gst-1.0 gir1.2-gtk-3.0 \
 APP_DIR="$HOME/.local/share/gnome-recorder"
 mkdir -p "$APP_DIR" "$HOME/.local/share/applications" "$HOME/.config/autostart"
 cp "$(dirname "$0")/recorder.py" "$APP_DIR/recorder.py"
+# Копируем иконки интерфейса вместе с программой.
+mkdir -p "$APP_DIR/icons"
+cp "$(dirname "$0")"/icons/*.png "$APP_DIR/icons/"
 chmod +x "$APP_DIR/recorder.py"
 cat > "$HOME/.local/share/applications/io.github.lancy.GnomeRecorder.desktop" <<EOF
 [Desktop Entry]

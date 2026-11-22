@@ -533,6 +533,12 @@ class MainApp:
         .capture-tile:hover { background: #444; }
         .round-button { background: #333; border: 0; border-radius: 26px; box-shadow: none; }
         .round-button:checked { background: #555; }
+        .mode-group { background: #333; border: 1px solid #777; border-radius: 26px; }
+        .mode-button { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
+        .mode-button:first-child { border-radius: 26px 0 0 26px; }
+        .mode-button:last-child { border-radius: 0 26px 26px 0; }
+        .mode-button:checked { background: #555; }
+        .mode-button:hover { background: #444; }
         .capture-separator { background: #393939; min-height: 2px; }
         """)
         Gtk.StyleContext.add_provider_for_screen(
@@ -580,17 +586,24 @@ class MainApp:
         content.pack_start(line, False, False, 25)
         bottom = Gtk.Box(spacing=18)
         content.pack_start(bottom, False, False, 0)
+        mode_group = Gtk.Box(spacing=0)
+        mode_group.get_style_context().add_class('mode-group')
+        bottom.pack_start(mode_group, False, False, 0)
         self.kind_buttons = {}
+        first_mode = None
         for kind, icon in [('video', 'Video.png'), ('none', 'Close.png'),
                            ('photo', 'Photo.png')]:
-            btn = Gtk.ToggleButton()
+            btn = Gtk.RadioButton.new_from_widget(first_mode)
+            if first_mode is None:
+                first_mode = btn
+            btn.set_mode(False)
             btn.set_size_request(50, 50)
-            btn.get_style_context().add_class('round-button')
+            btn.get_style_context().add_class('mode-button')
             btn.add(self._icon(icon, 27))
             btn.set_tooltip_text({'video': 'Видео', 'none': 'Без записи',
                                   'photo': 'Фото'}[kind])
             btn.connect('toggled', self._select_kind, kind)
-            bottom.pack_start(btn, False, False, 0)
+            mode_group.pack_start(btn, False, False, 0)
             self.kind_buttons[kind] = btn
         self.sound_button = Gtk.ToggleButton()
         self.sound_button.set_size_request(50, 50)
@@ -650,15 +663,9 @@ class MainApp:
         return True
 
     def _select_kind(self, button, kind):
-        if not button.get_active():
-            if not any(b.get_active() for b in self.kind_buttons.values()):
-                button.set_active(True)
-            return
-        self.capture_kind = kind
-        for key, other in self.kind_buttons.items():
-            if key != kind and other.get_active():
-                other.set_active(False)
-        self._launcher_states()
+        if button.get_active():
+            self.capture_kind = kind
+            self._launcher_states()
 
     def _sound_changed(self, button):
         self.video_audio_check.set_active(button.get_active())

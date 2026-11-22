@@ -533,7 +533,9 @@ class MainApp:
         .capture-tile:hover { background: #444; }
         .round-button { background: #333; border: 0; border-radius: 26px; box-shadow: none; }
         .round-button:checked { background: #555; }
-        .mode-group { background: #333; border: 1px solid #777; border-radius: 26px; }
+        .round-button:hover { background: #444; }
+        .round-button:checked:hover { background: #666; }
+        .mode-group { background: #333; border: 0; border-radius: 26px; }
         .mode-button { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
         .mode-button:first-child { border-radius: 26px 0 0 26px; }
         .mode-button:last-child { border-radius: 0 26px 26px 0; }
@@ -609,7 +611,7 @@ class MainApp:
         self.sound_button.set_size_request(50, 50)
         self.sound_button.get_style_context().add_class('round-button')
         self.sound_button.add(self._icon('Microphone.png', 26))
-        self.sound_button.set_tooltip_text('Звук при записи видео')
+        self.sound_button.set_tooltip_text('Звук при записи видео / отдельная запись аудио')
         self.sound_button.set_active(self.settings['audio_in_video'])
         self.sound_button.connect('toggled', self._sound_changed)
         bottom.pack_start(self.sound_button, False, False, 0)
@@ -620,15 +622,14 @@ class MainApp:
         settings_btn.get_style_context().add_class('round-button')
         settings_btn.add(self._icon('Settings.png', 28))
         settings_btn.connect('clicked', lambda *_: self.show_settings())
-        bottom.pack_end(settings_btn, False, False, 0)
         close = Gtk.Button()
         close.set_size_request(50, 50)
         close.get_style_context().add_class('round-button')
         close.add(self._icon('Close.png', 26))
-        close.set_halign(Gtk.Align.END)
-        close.set_valign(Gtk.Align.START)
+        close.set_tooltip_text('Скрыть панель')
         close.connect('clicked', lambda *_: self.launcher.hide())
-        overlay.add_overlay(close)
+        bottom.pack_end(close, False, False, 0)
+        bottom.pack_end(settings_btn, False, False, 10)
         self.kind_buttons['video'].set_active(True)
         self._launcher_states()
 
@@ -665,9 +666,32 @@ class MainApp:
     def _select_kind(self, button, kind):
         if button.get_active():
             self.capture_kind = kind
+            if kind == 'none':
+                # Режим аудио ожидает отдельного нажатия на микрофон.
+                self._set_sound_button(False)
+            elif kind == 'video':
+                self._set_sound_button(self.settings['audio_in_video'])
             self._launcher_states()
 
+    def _set_sound_button(self, active):
+        self._syncing_sound = True
+        try:
+            self.sound_button.set_active(active)
+        finally:
+            self._syncing_sound = False
+
     def _sound_changed(self, button):
+        if getattr(self, '_syncing_sound', False):
+            return
+        if self.capture_kind == 'none':
+            if button.get_active():
+                # Для аудиозаписи используются устройства из расширенных настроек.
+                self.start_audio()
+                if self.recording is None:
+                    self._set_sound_button(False)
+            elif self.recording and not self.recording.stopping:
+                self.stop()
+            return
         self.video_audio_check.set_active(button.get_active())
         self.settings['audio_in_video'] = button.get_active()
         save_settings(self.settings)
@@ -686,7 +710,11 @@ class MainApp:
             tile.set_sensitive(not busy and self.capture_kind != 'none')
         for button in self.kind_buttons.values():
             button.set_sensitive(not busy)
-        self.sound_button.set_sensitive(not busy and self.capture_kind == 'video')
+        audio_only = (self.capture_kind == 'none' and
+                      self.recording is not None and self.portal is None)
+        self.sound_button.set_sensitive(
+            (not busy and self.capture_kind in ('video', 'none')) or
+            (audio_only and not self.recording.stopping))
 
     def show_settings(self):
         self.window.show_all()
@@ -784,8 +812,8 @@ class MainApp:
                      ('open_folder', self.open_folder.get_active())):
             self.settings[k] = v
         self.settings['audio_sources'] = self.get_sources()
-        if hasattr(self, 'sound_button'):
-            self.sound_button.set_active(self.video_audio_check.get_active())
+        if hasattr(self, 'sound_button') and self.capture_kind == 'video':
+            self._set_sound_button(self.video_audio_check.get_active())
         self.settings['audio_format'] = self.audio_format.get_active_id() or 'wav'
         self.settings['video_dir'] = self.video_dir.get_filename() or DEFAULTS['video_dir']
         self.settings['audio_dir'] = self.audio_dir.get_filename() or DEFAULTS['audio_dir']
@@ -989,6 +1017,8 @@ class MainApp:
             self._button_states()
 
     def _finished(self, paths):
+        if self.capture_kind == 'none':
+            self._set_sound_button(False)
         self.recording = None
         if self.portal:
             self.portal.close()

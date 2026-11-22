@@ -536,18 +536,18 @@ class MainApp:
         .capture-tile:focus, .round-button:focus, .mode-button:focus, .record-button:focus {
             outline: none; box-shadow: none; border-color: transparent;
         }
-        .round-button { background: #333; border: 0; border-radius: 26px; box-shadow: none; }
+        .round-button { background: #333; border: 0; border-radius: 32px; box-shadow: none; }
         .round-button:checked { background: #555; }
         .round-button:hover { background: #444; }
         .round-button:checked:hover { background: #666; }
-        .record-button { background: #333; border: 0; border-radius: 35px; box-shadow: none; }
+        .record-button { background: #333; border: 0; border-radius: 35px; box-shadow: none; padding: 0; margin: 0; }
         .record-button:hover { background: #444; }
         .record-button:checked { background: #d62c32; }
         .record-button:checked:hover { background: #e33b40; }
-        .mode-group { background: #333; border: 0; border-radius: 26px; }
+        .mode-group { background: #333; border: 0; border-radius: 32px; }
         .mode-button { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
-        .mode-button:first-child { border-radius: 26px 0 0 26px; }
-        .mode-button:last-child { border-radius: 0 26px 26px 0; }
+        .mode-button:first-child { border-radius: 32px 0 0 32px; }
+        .mode-button:last-child { border-radius: 0 32px 32px 0; }
         .mode-button:checked { background: #555; }
         .mode-button:hover { background: #444; }
         .capture-separator { background: #393939; min-height: 2px; }
@@ -557,8 +557,8 @@ class MainApp:
         self.launcher = Gtk.Window(title='GNOME Recorder')
         self.launcher.set_decorated(False)
         self.launcher.set_resizable(False)
-        self.launcher.set_default_size(640, 272)
-        self.launcher.set_size_request(640, 272)
+        self.launcher.set_default_size(720, 272)
+        self.launcher.set_size_request(720, 272)
         self.launcher.set_keep_above(True)
         self.launcher.connect('delete-event', self._launcher_close)
         self.launcher.connect('realize', self._position_launcher)
@@ -612,9 +612,9 @@ class MainApp:
             if first_mode is None:
                 first_mode = btn
             btn.set_mode(False)
-            btn.set_size_request(50, 50)
+            btn.set_size_request(63, 63)
             btn.get_style_context().add_class('mode-button')
-            btn.add(self._icon(icon, 14))
+            btn.add(self._icon(icon, 20))
             btn.set_valign(Gtk.Align.CENTER)
             btn.set_tooltip_text({'video': 'Видео', 'none': 'Без записи',
                                   'photo': 'Фото'}[kind])
@@ -622,9 +622,9 @@ class MainApp:
             mode_group.pack_start(btn, False, False, 0)
             self.kind_buttons[kind] = btn
         self.sound_button = Gtk.ToggleButton()
-        self.sound_button.set_size_request(50, 50)
+        self.sound_button.set_size_request(63, 63)
         self.sound_button.get_style_context().add_class('round-button')
-        self.sound_button.add(self._icon('Microphone.png', 13))
+        self.sound_button.add(self._icon('Microphone.png', 20))
         self.sound_button.set_valign(Gtk.Align.CENTER)
         self.sound_button.set_tooltip_text('Звук при записи видео / отдельная запись аудио')
         self.sound_button.set_active(self.settings['audio_in_video'])
@@ -638,20 +638,20 @@ class MainApp:
         self.record_button.set_valign(Gtk.Align.CENTER)
         self.record_button.set_halign(Gtk.Align.CENTER)
         self.record_button.get_style_context().add_class('record-button')
-        self.record_button.add(self._icon('Record.png', 20))
+        self.record_button.add(self._icon('Record.png', 70))
         self.record_button.set_tooltip_text('Начать запись / остановить запись')
         self.record_button.connect('clicked', self._record_clicked)
         footer.add_overlay(self.record_button)
         settings_btn = Gtk.Button()
-        settings_btn.set_size_request(50, 50)
+        settings_btn.set_size_request(63, 63)
         settings_btn.get_style_context().add_class('round-button')
-        settings_btn.add(self._icon('Settings.png', 14))
+        settings_btn.add(self._icon('Settings.png', 20))
         settings_btn.set_valign(Gtk.Align.CENTER)
         settings_btn.connect('clicked', lambda *_: self.show_settings())
         close = Gtk.Button()
-        close.set_size_request(50, 50)
+        close.set_size_request(63, 63)
         close.get_style_context().add_class('round-button')
-        close.add(self._icon('Close.png', 13))
+        close.add(self._icon('Close.png', 20))
         close.set_valign(Gtk.Align.CENTER)
         close.set_tooltip_text('Скрыть панель')
         close.connect('clicked', lambda *_: self.launcher.hide())

@@ -24,7 +24,7 @@ for env_name in ('GSETTINGS_SCHEMA_DIR', 'GTK_PATH', 'GTK_EXE_PREFIX',
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gst', '1.0')
-from gi.repository import Gtk, GLib, Gio, Gst
+from gi.repository import Gtk, GLib, Gio, Gst, Gdk, GdkPixbuf
 
 try:
     gi.require_version('AyatanaAppIndicator3', '0.1')
@@ -407,8 +407,10 @@ class MainApp:
         self.recording = None
         self.portal = None
         self.mode = 'screen'
+        self.capture_kind = 'video'
         self.status = 'Готово'
         self._build_window()
+        self._build_launcher()
         self._build_indicator()
         self._make_actions()
         GLib.timeout_add(400, self._tick)
@@ -521,6 +523,230 @@ class MainApp:
             bar.pack_start(btn, True, True, 0)
         self._button_states()
 
+
+    def _build_launcher(self):
+        """Компактное окно записи с доступом к существующим настройкам."""
+        provider = Gtk.CssProvider()
+        provider.load_from_data(b"""
+        #capture-panel { background: #222; }
+        .capture-tile { background: #333; border: 0; border-radius: 5px; color: #aaa; box-shadow: none; }
+        .capture-tile:hover { background: #444; }
+        .round-button { background: #333; border: 0; border-radius: 26px; box-shadow: none; }
+        .round-button:checked { background: #555; }
+        .capture-separator { background: #393939; min-height: 2px; }
+        """)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self.launcher = Gtk.Window(title='GNOME Recorder')
+        self.launcher.set_decorated(False)
+        self.launcher.set_resizable(False)
+        self.launcher.set_default_size(640, 300)
+        self.launcher.set_size_request(640, 300)
+        self.launcher.set_keep_above(True)
+        self.launcher.connect('delete-event', self._launcher_close)
+        self.launcher.connect('realize', self._position_launcher)
+        self.launcher.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.launcher.connect('button-press-event', self._drag_launcher)
+        overlay = Gtk.Overlay()
+        overlay.set_name('capture-panel')
+        self.launcher.add(overlay)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        content.set_margin_start(41)
+        content.set_margin_end(41)
+        content.set_margin_top(75)
+        content.set_margin_bottom(25)
+        overlay.add(content)
+        tiles = Gtk.Box(spacing=42)
+        content.pack_start(tiles, False, False, 0)
+        self.capture_tiles = {}
+        for mode, text, icon in [('area', 'область', 'Area.png'),
+                                 ('window', 'окно', 'Window.png'),
+                                 ('screen', 'экран', 'Screen.png')]:
+            btn = Gtk.Button()
+            btn.set_size_request(158, 100)
+            btn.get_style_context().add_class('capture-tile')
+            inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            inner.set_halign(Gtk.Align.CENTER)
+            inner.set_valign(Gtk.Align.CENTER)
+            inner.pack_start(self._icon(icon, 38), False, False, 0)
+            inner.pack_start(Gtk.Label(label=text), False, False, 0)
+            btn.add(inner)
+            btn.connect('clicked', lambda _btn, selected=mode: self._capture(selected))
+            tiles.pack_start(btn, True, True, 0)
+            self.capture_tiles[mode] = btn
+        line = Gtk.Box()
+        line.set_size_request(-1, 2)
+        line.get_style_context().add_class('capture-separator')
+        content.pack_start(line, False, False, 25)
+        bottom = Gtk.Box(spacing=18)
+        content.pack_start(bottom, False, False, 0)
+        self.kind_buttons = {}
+        for kind, icon in [('video', 'Video.png'), ('none', 'Close.png'),
+                           ('photo', 'Photo.png')]:
+            btn = Gtk.ToggleButton()
+            btn.set_size_request(50, 50)
+            btn.get_style_context().add_class('round-button')
+            btn.add(self._icon(icon, 27))
+            btn.set_tooltip_text({'video': 'Видео', 'none': 'Без записи',
+                                  'photo': 'Фото'}[kind])
+            btn.connect('toggled', self._select_kind, kind)
+            bottom.pack_start(btn, False, False, 0)
+            self.kind_buttons[kind] = btn
+        self.sound_button = Gtk.ToggleButton()
+        self.sound_button.set_size_request(50, 50)
+        self.sound_button.get_style_context().add_class('round-button')
+        self.sound_button.add(self._icon('Microphone.png', 26))
+        self.sound_button.set_tooltip_text('Звук при записи видео')
+        self.sound_button.set_active(self.settings['audio_in_video'])
+        self.sound_button.connect('toggled', self._sound_changed)
+        bottom.pack_start(self.sound_button, False, False, 0)
+        spacer = Gtk.Box()
+        bottom.pack_start(spacer, True, True, 0)
+        settings_btn = Gtk.Button()
+        settings_btn.set_size_request(50, 50)
+        settings_btn.get_style_context().add_class('round-button')
+        settings_btn.add(self._icon('Settings.png', 28))
+        settings_btn.connect('clicked', lambda *_: self.show_settings())
+        bottom.pack_end(settings_btn, False, False, 0)
+        close = Gtk.Button()
+        close.set_size_request(50, 50)
+        close.get_style_context().add_class('round-button')
+        close.add(self._icon('Close.png', 26))
+        close.set_halign(Gtk.Align.END)
+        close.set_valign(Gtk.Align.START)
+        close.connect('clicked', lambda *_: self.launcher.hide())
+        overlay.add_overlay(close)
+        self.kind_buttons['video'].set_active(True)
+        self._launcher_states()
+
+    @staticmethod
+    def _icon(filename, size):
+        path = BASE / 'icons' / filename
+        if path.is_file():
+            try:
+                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path), size, size, True)
+                return Gtk.Image.new_from_pixbuf(pix)
+            except GLib.Error:
+                pass
+        return Gtk.Image.new_from_icon_name('image-missing', Gtk.IconSize.BUTTON)
+
+    def _position_launcher(self, *_):
+        # GNOME Wayland может запрещать приложению задавать координаты окна.
+        screen = self.launcher.get_screen()
+        monitor = screen.get_monitor_at_window(self.launcher.get_window())
+        rect = screen.get_monitor_geometry(monitor)
+        width, height = self.launcher.get_size()
+        self.launcher.move(rect.x + (rect.width-width)//2,
+                           rect.y + rect.height-height-50)
+
+    def _drag_launcher(self, _widget, event):
+        if event.button == 1 and event.window == self.launcher.get_window():
+            self.launcher.begin_move_drag(1, int(event.x_root), int(event.y_root), event.time)
+            return True
+        return False
+
+    def _launcher_close(self, *_):
+        self.launcher.hide()
+        return True
+
+    def _select_kind(self, button, kind):
+        if not button.get_active():
+            if not any(b.get_active() for b in self.kind_buttons.values()):
+                button.set_active(True)
+            return
+        self.capture_kind = kind
+        for key, other in self.kind_buttons.items():
+            if key != kind and other.get_active():
+                other.set_active(False)
+        self._launcher_states()
+
+    def _sound_changed(self, button):
+        self.video_audio_check.set_active(button.get_active())
+        self.settings['audio_in_video'] = button.get_active()
+        save_settings(self.settings)
+
+    def _capture(self, mode):
+        if self.capture_kind == 'video':
+            self.start_video(mode)
+        elif self.capture_kind == 'photo':
+            self.take_photo(mode)
+
+    def _launcher_states(self):
+        if not hasattr(self, 'capture_tiles'):
+            return
+        busy = self.recording is not None or self.portal is not None or getattr(self, '_photo_pending', False)
+        for tile in self.capture_tiles.values():
+            tile.set_sensitive(not busy and self.capture_kind != 'none')
+        for button in self.kind_buttons.values():
+            button.set_sensitive(not busy)
+        self.sound_button.set_sensitive(not busy and self.capture_kind == 'video')
+
+    def show_settings(self):
+        self.window.show_all()
+        self.window.present()
+
+    def take_photo(self, mode):
+        """Снимок через портал GNOME (область выбирается системным диалогом)."""
+        if self.recording or self.portal or getattr(self, '_photo_pending', False):
+            return
+        self._photo_pending = True
+        self._launcher_states()
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            token = 'photo' + uuid.uuid4().hex
+            sender = bus.get_unique_name()[1:].replace('.', '_')
+            path = '/org/freedesktop/portal/desktop/request/' + sender + '/' + token
+            sid = bus.signal_subscribe('org.freedesktop.portal.Desktop',
+                'org.freedesktop.portal.Request', 'Response', path, None,
+                Gio.DBusSignalFlags.NONE, self._photo_response, None)
+            self._photo_request = (bus, sid)
+            args = GLib.Variant('(sa{sv})', ['', {
+                'handle_token': GLib.Variant('s', token),
+                'interactive': GLib.Variant('b', True)}])
+            bus.call('org.freedesktop.portal.Desktop', '/org/freedesktop/portal/desktop',
+                     'org.freedesktop.portal.Screenshot', 'Screenshot', args,
+                     GLib.VariantType.new('(o)'), Gio.DBusCallFlags.NONE,
+                     -1, None, self._photo_started, None)
+            self._status('Выберите снимок в системном диалоге…')
+        except Exception as exc:
+            self._finish_photo()
+            self._error(str(exc))
+
+    def _photo_started(self, bus, response, _data):
+        try:
+            bus.call_finish(response)
+        except Exception as exc:
+            self._finish_photo()
+            self._error(str(exc))
+
+    def _photo_response(self, _bus, _sender, _path, _iface, _signal, args, _data):
+        try:
+            code, info = args.unpack()
+            if code:
+                self._status('Снимок отменён')
+                return
+            uri = info.get('uri')
+            if not uri:
+                raise RuntimeError('Портал не вернул файл снимка')
+            directory = Path(self.settings['video_dir']).expanduser()
+            directory.mkdir(parents=True, exist_ok=True)
+            dest = directory / ('Снимок ' + datetime.now().strftime('%Y-%m-%d %H-%M-%S-%f') + '.png')
+            Gio.File.new_for_uri(uri).copy(Gio.File.new_for_path(str(dest)),
+                Gio.FileCopyFlags.NONE, None, None)
+            self._status('Снимок сохранён: ' + str(dest))
+        except Exception as exc:
+            self._error(str(exc))
+        finally:
+            self._finish_photo()
+
+    def _finish_photo(self):
+        request = getattr(self, '_photo_request', None)
+        if request:
+            request[0].signal_unsubscribe(request[1])
+            self._photo_request = None
+        self._photo_pending = False
+        self._launcher_states()
+
     @staticmethod
     def _row(parent, text, widget):
         label = Gtk.Label(label=text, xalign=0)
@@ -551,6 +777,8 @@ class MainApp:
                      ('open_folder', self.open_folder.get_active())):
             self.settings[k] = v
         self.settings['audio_sources'] = self.get_sources()
+        if hasattr(self, 'sound_button'):
+            self.sound_button.set_active(self.video_audio_check.get_active())
         self.settings['audio_format'] = self.audio_format.get_active_id() or 'wav'
         self.settings['video_dir'] = self.video_dir.get_filename() or DEFAULTS['video_dir']
         self.settings['audio_dir'] = self.audio_dir.get_filename() or DEFAULTS['audio_dir']
@@ -616,8 +844,8 @@ class MainApp:
             self.show_window()
 
     def show_window(self):
-        self.window.show_all()
-        self.window.present()
+        self.launcher.show_all()
+        self.launcher.present()
 
     def _on_close(self, *_):
         self._save()
@@ -637,6 +865,7 @@ class MainApp:
 
     def _button_states(self):
         active = self.recording is not None or self.portal is not None
+        self._launcher_states()
         self.start_video_btn.set_sensitive(not active)
         self.start_audio_btn.set_sensitive(not active)
         self.pause_btn.set_sensitive(self.recording is not None and not self.recording.stopping)

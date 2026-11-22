@@ -2,13 +2,17 @@
 set -euo pipefail
 
 echo 'GNOME Recorder — установка для Ubuntu / GNOME'
-sudo apt update
-sudo apt install -y python3-gi python3-gst-1.0 gir1.2-gtk-3.0 \
-  gir1.2-ayatanaappindicator3-0.1 libayatana-appindicator3-1 \
-  gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-base \
-  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
-  gstreamer1.0-plugins-ugly gstreamer1.0-libav \
-  pulseaudio-utils xdg-desktop-portal xdg-desktop-portal-gnome
+# Зависимости устанавливаются отдельно, чтобы обновление приложения не
+# зависело от недоступных сторонних репозиториев APT.
+if [[ "${1:-}" == "--deps" ]]; then
+  sudo apt update
+  sudo apt install -y python3-gi python3-gst-1.0 gir1.2-gtk-3.0 \
+    gir1.2-ayatanaappindicator3-0.1 libayatana-appindicator3-1 \
+    gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+    pulseaudio-utils xdg-desktop-portal xdg-desktop-portal-gnome
+fi
 
 APP_DIR="$HOME/.local/share/gnome-recorder"
 mkdir -p "$APP_DIR" "$HOME/.local/share/applications" "$HOME/.config/autostart"

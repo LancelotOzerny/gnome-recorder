@@ -408,6 +408,7 @@ class MainApp:
         self.portal = None
         self.mode = 'screen'
         self.capture_kind = 'video'
+        self.selected_capture = 'screen'
         self.status = 'Готово'
         self._build_window()
         self._build_launcher()
@@ -531,13 +532,18 @@ class MainApp:
         #capture-panel { background: #222; }
         .capture-tile { background: #333; border: 0; border-radius: 5px; color: #aaa; box-shadow: none; }
         .capture-tile:hover { background: #444; }
-        .capture-tile:focus, .round-button:focus, .mode-button:focus {
+        .capture-tile.selected-capture { background: #505050; }
+        .capture-tile:focus, .round-button:focus, .mode-button:focus, .record-button:focus {
             outline: none; box-shadow: none; border-color: transparent;
         }
         .round-button { background: #333; border: 0; border-radius: 26px; box-shadow: none; }
         .round-button:checked { background: #555; }
         .round-button:hover { background: #444; }
         .round-button:checked:hover { background: #666; }
+        .record-button { background: #333; border: 0; border-radius: 35px; box-shadow: none; }
+        .record-button:hover { background: #444; }
+        .record-button:checked { background: #d62c32; }
+        .record-button:checked:hover { background: #e33b40; }
         .mode-group { background: #333; border: 0; border-radius: 26px; }
         .mode-button { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
         .mode-button:first-child { border-radius: 26px 0 0 26px; }
@@ -590,6 +596,7 @@ class MainApp:
         line.get_style_context().add_class('capture-separator')
         content.pack_start(line, False, False, 25)
         bottom = Gtk.Box(spacing=18)
+        bottom.set_valign(Gtk.Align.CENTER)
         content.pack_start(bottom, False, False, 0)
         mode_group = Gtk.Box(spacing=0)
         mode_group.get_style_context().add_class('mode-group')
@@ -604,7 +611,8 @@ class MainApp:
             btn.set_mode(False)
             btn.set_size_request(50, 50)
             btn.get_style_context().add_class('mode-button')
-            btn.add(self._icon(icon, 27))
+            btn.add(self._icon(icon, 14))
+            btn.set_valign(Gtk.Align.CENTER)
             btn.set_tooltip_text({'video': 'Видео', 'none': 'Без записи',
                                   'photo': 'Фото'}[kind])
             btn.connect('toggled', self._select_kind, kind)
@@ -613,27 +621,42 @@ class MainApp:
         self.sound_button = Gtk.ToggleButton()
         self.sound_button.set_size_request(50, 50)
         self.sound_button.get_style_context().add_class('round-button')
-        self.sound_button.add(self._icon('Microphone.png', 26))
+        self.sound_button.add(self._icon('Microphone.png', 13))
+        self.sound_button.set_valign(Gtk.Align.CENTER)
         self.sound_button.set_tooltip_text('Звук при записи видео / отдельная запись аудио')
         self.sound_button.set_active(self.settings['audio_in_video'])
         self.sound_button.connect('toggled', self._sound_changed)
         bottom.pack_start(self.sound_button, False, False, 0)
+        # Кнопка записи находится по центру независимо от размеров групп.
         spacer = Gtk.Box()
         bottom.pack_start(spacer, True, True, 0)
+        self.record_button = Gtk.ToggleButton()
+        self.record_button.set_size_request(70, 70)
+        self.record_button.set_valign(Gtk.Align.CENTER)
+        self.record_button.get_style_context().add_class('record-button')
+        self.record_button.add(self._icon('Record.png', 20))
+        self.record_button.set_tooltip_text('Начать запись / остановить запись')
+        self.record_button.connect('clicked', self._record_clicked)
+        bottom.pack_start(self.record_button, False, False, 0)
+        right_spacer = Gtk.Box()
+        bottom.pack_start(right_spacer, True, True, 0)
         settings_btn = Gtk.Button()
         settings_btn.set_size_request(50, 50)
         settings_btn.get_style_context().add_class('round-button')
-        settings_btn.add(self._icon('Settings.png', 28))
+        settings_btn.add(self._icon('Settings.png', 14))
+        settings_btn.set_valign(Gtk.Align.CENTER)
         settings_btn.connect('clicked', lambda *_: self.show_settings())
         close = Gtk.Button()
         close.set_size_request(50, 50)
         close.get_style_context().add_class('round-button')
-        close.add(self._icon('Close.png', 26))
+        close.add(self._icon('Close.png', 13))
+        close.set_valign(Gtk.Align.CENTER)
         close.set_tooltip_text('Скрыть панель')
         close.connect('clicked', lambda *_: self.launcher.hide())
         bottom.pack_end(close, False, False, 0)
-        bottom.pack_end(settings_btn, False, False, 10)
+        bottom.pack_end(settings_btn, False, False, 0)
         self.kind_buttons['video'].set_active(True)
+        self._capture(self.selected_capture)
         self._launcher_states()
 
     @staticmethod
@@ -700,10 +723,37 @@ class MainApp:
         save_settings(self.settings)
 
     def _capture(self, mode):
-        if self.capture_kind == 'video':
-            self.start_video(mode)
+        # Плитки выбирают источник; запуск выполняет центральная кнопка.
+        self.selected_capture = mode
+        self.mode = mode
+        for key, tile in self.capture_tiles.items():
+            context = tile.get_style_context()
+            if key == mode:
+                context.add_class('selected-capture')
+            else:
+                context.remove_class('selected-capture')
+
+    def _record_clicked(self, _button):
+        if self.recording or self.portal:
+            self.stop()
+        elif getattr(self, '_photo_pending', False):
+            return
+        elif self.capture_kind == 'video':
+            self.start_video(self.selected_capture)
         elif self.capture_kind == 'photo':
-            self.take_photo(mode)
+            self.take_photo(self.selected_capture)
+        elif self.capture_kind == 'none':
+            self.start_audio()
+        self._launcher_states()
+
+    def _set_record_button(self, active):
+        if not hasattr(self, 'record_button'):
+            return
+        self._syncing_record = True
+        try:
+            self.record_button.set_active(active)
+        finally:
+            self._syncing_record = False
 
     def _launcher_states(self):
         if not hasattr(self, 'capture_tiles'):
@@ -718,6 +768,13 @@ class MainApp:
         self.sound_button.set_sensitive(
             (not busy and self.capture_kind in ('video', 'none')) or
             (audio_only and not self.recording.stopping))
+        if hasattr(self, 'record_button'):
+            recording_active = self.recording is not None and not self.recording.stopping
+            pending = self.portal is not None or getattr(self, '_photo_pending', False)
+            self._set_record_button(recording_active or pending)
+            self.record_button.set_sensitive(
+                recording_active or self.portal is not None or
+                (not busy and self.capture_kind in ('video', 'photo', 'none')))
 
     def show_settings(self):
         self.window.show_all()
